@@ -1,0 +1,189 @@
+import { useState } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { guidesService, Guide, Step } from '../services/guidesService';
+import { uploadsService } from '../services/uploadsService';
+import StepCard from '../components/guides/StepCard';
+
+export default function GuideEditorPage() {
+  const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+
+  const { data: guide, isLoading } = useQuery({
+    queryKey: ['guide', id],
+    queryFn: () => guidesService.get(id!),
+    enabled: !!id,
+  });
+
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+
+  useState(() => {
+    if (guide) {
+      setTitle(guide.title);
+      setDescription(guide.description || '');
+    }
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: (data: { title?: string; description?: string; status?: string }) =>
+      guidesService.update(id!, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['guide', id] });
+    },
+  });
+
+  const deleteStepMutation = useMutation({
+    mutationFn: guidesService.deleteStep,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['guide', id] });
+    },
+  });
+
+  if (isLoading) return <p>Loading...</p>;
+  if (!guide) return <p>Guide not found</p>;
+
+  return (
+    <div style={{ maxWidth: 900, margin: '0 auto' }}>
+      <button
+        onClick={() => navigate('/guides')}
+        style={{
+          padding: '8px 16px',
+          background: 'transparent',
+          border: '1px solid var(--border)',
+          borderRadius: 6,
+          cursor: 'pointer',
+          marginBottom: 24,
+        }}
+      >
+        Back to Guides
+      </button>
+
+      <div style={{
+        background: 'var(--surface)',
+        borderRadius: 12,
+        padding: 24,
+        marginBottom: 24,
+        border: '1px solid var(--border)',
+      }}>
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ display: 'block', marginBottom: 6, fontSize: 14, fontWeight: 500 }}>Title</label>
+          <input
+            type="text"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            onBlur={() => updateMutation.mutate({ title })}
+            style={{
+              width: '100%',
+              padding: '10px 12px',
+              border: '1px solid var(--border)',
+              borderRadius: 6,
+              fontSize: 16,
+              fontWeight: 600,
+            }}
+          />
+        </div>
+
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ display: 'block', marginBottom: 6, fontSize: 14, fontWeight: 500 }}>Description</label>
+          <textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            onBlur={() => updateMutation.mutate({ description })}
+            rows={3}
+            style={{
+              width: '100%',
+              padding: '10px 12px',
+              border: '1px solid var(--border)',
+              borderRadius: 6,
+              fontSize: 14,
+              resize: 'vertical',
+            }}
+          />
+        </div>
+
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+          <button
+            onClick={() => updateMutation.mutate({ status: 'PUBLISHED' })}
+            disabled={updateMutation.isPending}
+            style={{
+              padding: '10px 20px',
+              background: 'var(--success)',
+              color: 'white',
+              border: 'none',
+              borderRadius: 6,
+              fontSize: 14,
+              fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >
+            Publish
+          </button>
+          <button
+            onClick={() => updateMutation.mutate({ status: 'DRAFT' })}
+            disabled={updateMutation.isPending}
+            style={{
+              padding: '10px 20px',
+              background: 'var(--secondary)',
+              color: 'white',
+              border: 'none',
+              borderRadius: 6,
+              fontSize: 14,
+              fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >
+            Unpublish
+          </button>
+          <span style={{
+            padding: '4px 8px',
+            borderRadius: 4,
+            fontSize: 12,
+            fontWeight: 500,
+            background: guide.status === 'PUBLISHED' ? '#dcfce7' : '#f1f5f9',
+            color: guide.status === 'PUBLISHED' ? 'var(--success)' : 'var(--secondary)',
+          }}>
+            {guide.status}
+          </span>
+        </div>
+
+        {guide.publicSlug && (
+          <div style={{ marginTop: 16, padding: 12, background: '#f1f5f9', borderRadius: 6 }}>
+            <p style={{ fontSize: 14, color: 'var(--text-muted)' }}>
+              Public URL: <code style={{ background: 'white', padding: '2px 6px', borderRadius: 4 }}>/public/{guide.publicSlug}</code>
+            </p>
+          </div>
+        )}
+      </div>
+
+      <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 16 }}>Steps ({guide.steps?.length || 0})</h2>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        {guide.steps?.map((step, index) => (
+          <StepCard
+            key={step.id}
+            step={step}
+            index={index + 1}
+            onDelete={() => deleteStepMutation.mutate(step.id)}
+          />
+        ))}
+      </div>
+
+      {!guide.steps?.length && (
+        <div style={{
+          textAlign: 'center',
+          padding: 48,
+          background: 'var(--surface)',
+          borderRadius: 12,
+          border: '2px dashed var(--border)',
+        }}>
+          <p style={{ color: 'var(--text-muted)' }}>No steps yet</p>
+          <p style={{ fontSize: 14, color: 'var(--text-muted)', marginTop: 8 }}>
+            Use the Chrome extension to record steps
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}

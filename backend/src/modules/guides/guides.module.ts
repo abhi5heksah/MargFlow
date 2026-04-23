@@ -1,0 +1,13 @@
+import { Module } from '@nestjs/common';
+import { GuidesController } from './guides.controller';
+import { GuidesService } from './guides.service';
+import { GuidesRepository } from './guides.repository';
+import { StepsModule } from '../steps/steps.module';
+
+@Module({
+  imports: [StepsModule],
+  controllers: [GuidesController],
+  providers: [GuidesService, GuidesRepository],
+  exports: [GuidesService],
+})
+export class GuidesModule {}
