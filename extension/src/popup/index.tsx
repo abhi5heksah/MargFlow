@@ -28,14 +28,28 @@ const Popup: React.FC = () => {
   });
 
   useEffect(() => {
-    chrome.storage.sync.get(['apiBaseUrl', 'token', 'guideId']).then((result) => {
+    // 1. Initial load from storage for UI responsiveness
+    chrome.storage.sync.get(['apiBaseUrl', 'token', 'guideId', 'recording']).then((result) => {
       setState((prev) => ({
         ...prev,
         apiBaseUrl: result.apiBaseUrl || 'http://localhost:4000/api',
         token: result.token || null,
         isLoggedIn: !!result.token,
         guideId: result.guideId || null,
+        recording: !!result.recording,
       }));
+
+      // 2. Double check with background script for the "true" state
+      chrome.runtime.sendMessage({ type: 'GET_STATUS' }, (bgState) => {
+        if (bgState) {
+          setState((prev) => ({
+            ...prev,
+            recording: bgState.recording,
+            guideId: bgState.guideId,
+            token: bgState.token || prev.token,
+          }));
+        }
+      });
     });
   }, []);
 
@@ -67,6 +81,7 @@ const Popup: React.FC = () => {
       alert('Login failed. Please check your credentials and API URL.');
     }
   };
+
 
   const handleStartRecording = async () => {
     if (!state.token) {
@@ -111,7 +126,7 @@ const Popup: React.FC = () => {
   const handleStopRecording = () => {
     chrome.runtime.sendMessage({ type: 'STOP_RECORDING' });
 
-    chrome.storage.sync.remove(['guideId']);
+    chrome.storage.sync.remove(['guideId', 'recording']);
 
     setState((prev) => ({
       ...prev,
@@ -121,7 +136,7 @@ const Popup: React.FC = () => {
   };
 
   const handleLogout = async () => {
-    await chrome.storage.sync.remove(['token', 'guideId']);
+    await chrome.storage.sync.remove(['token', 'guideId', 'recording']);
     setState((prev) => ({
       ...prev,
       token: null,

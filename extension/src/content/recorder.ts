@@ -5,9 +5,19 @@ const state = {
   token: null as string | null,
 };
 
-chrome.storage.sync.get(['apiBaseUrl', 'token']).then((result) => {
+chrome.storage.sync.get(['apiBaseUrl', 'token', 'guideId', 'recording']).then((result) => {
   if (result.apiBaseUrl) state.apiBaseUrl = result.apiBaseUrl;
   if (result.token) state.token = result.token;
+  if (result.recording && result.guideId) {
+    state.guideId = result.guideId;
+    state.recording = true;
+    console.log('MargFlow: Recording active for guide', state.guideId);
+    
+    // Auto-attach listeners if already recording
+    document.addEventListener('click', handleClick, true);
+    document.addEventListener('input', handleInput, true);
+    window.addEventListener('beforeunload', handleNavigation);
+  }
 });
 
 interface RawEventPayload {

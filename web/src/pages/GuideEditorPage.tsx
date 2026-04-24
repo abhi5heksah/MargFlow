@@ -109,7 +109,7 @@ export default function GuideEditorPage() {
             disabled={updateMutation.isPending}
             style={{
               padding: '10px 20px',
-              background: 'var(--success)',
+              background: '#22c55e',
               color: 'white',
               border: 'none',
               borderRadius: 6,
@@ -125,7 +125,7 @@ export default function GuideEditorPage() {
             disabled={updateMutation.isPending}
             style={{
               padding: '10px 20px',
-              background: 'var(--secondary)',
+              background: '#64748b',
               color: 'white',
               border: 'none',
               borderRadius: 6,
@@ -136,13 +136,37 @@ export default function GuideEditorPage() {
           >
             Unpublish
           </button>
+          <button
+            onClick={() => {
+              const data = JSON.stringify(guide, null, 2);
+              const blob = new Blob([data], { type: 'application/json' });
+              const url = URL.createObjectURL(blob);
+              const link = document.createElement('a');
+              link.href = url;
+              link.download = `${guide.title.replace(/\s+/g, '_')}_guide.json`;
+              link.click();
+              URL.revokeObjectURL(url);
+            }}
+            style={{
+              padding: '10px 20px',
+              background: 'white',
+              color: '#6366f1',
+              border: '1px solid #6366f1',
+              borderRadius: 6,
+              fontSize: 14,
+              fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >
+            Export JSON
+          </button>
           <span style={{
             padding: '4px 8px',
             borderRadius: 4,
             fontSize: 12,
             fontWeight: 500,
             background: guide.status === 'PUBLISHED' ? '#dcfce7' : '#f1f5f9',
-            color: guide.status === 'PUBLISHED' ? 'var(--success)' : 'var(--secondary)',
+            color: guide.status === 'PUBLISHED' ? '#16a34a' : '#64748b',
           }}>
             {guide.status}
           </span>

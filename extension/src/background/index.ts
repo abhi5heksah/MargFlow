@@ -8,6 +8,9 @@ interface RawEventPayload {
   metadata?: {
     viewportWidth?: number;
     viewportHeight?: number;
+    clickX?: number;
+    clickY?: number;
+    elementRect?: any;
   };
 }
 
@@ -53,6 +56,35 @@ const state: ExtensionState = {
   token: null,
 };
 
+// Initialize state from storage
+chrome.storage.sync.get(['guideId', 'token', 'apiBaseUrl', 'recording']).then((result) => {
+  if (result.recording && result.guideId && result.token) {
+    state.recording = true;
+    state.guideId = result.guideId;
+    state.token = result.token;
+    state.apiBaseUrl = result.apiBaseUrl || 'http://localhost:4000/api';
+    console.log('MargFlow Background: Resumed recording for guide', state.guideId);
+  }
+});
+
+let eventQueue: { payload: RawEventPayload; sender: chrome.runtime.MessageSender }[] = [];
+let isProcessing = false;
+
+async function processQueue() {
+  if (isProcessing || eventQueue.length === 0) return;
+  isProcessing = true;
+
+  while (eventQueue.length > 0) {
+    const item = eventQueue.shift();
+    if (item) {
+      const { payload, sender } = item;
+      await handleRecordedEvent(payload, state, sender);
+    }
+  }
+
+  isProcessing = false;
+}
+
 chrome.runtime.onMessage.addListener((message: any, sender, sendResponse) => {
   if (message.type === 'START_RECORDING') {
     state.recording = true;
@@ -60,7 +92,13 @@ chrome.runtime.onMessage.addListener((message: any, sender, sendResponse) => {
     state.apiBaseUrl = message.apiBaseUrl;
     state.token = message.token;
 
-    // Notify all tabs
+    chrome.storage.sync.set({
+      recording: true,
+      guideId: state.guideId,
+      token: state.token,
+      apiBaseUrl: state.apiBaseUrl
+    });
+
     chrome.tabs.query({}).then((tabs) => {
       tabs.forEach((tab) => {
         if (tab.id) {
@@ -70,7 +108,7 @@ chrome.runtime.onMessage.addListener((message: any, sender, sendResponse) => {
             guideId: state.guideId,
             apiBaseUrl: state.apiBaseUrl,
             token: state.token,
-          }).catch(() => {}); // Ignore tabs where content script isn't loaded
+          }).catch(() => {});
         }
       });
     });
@@ -80,8 +118,8 @@ chrome.runtime.onMessage.addListener((message: any, sender, sendResponse) => {
   if (message.type === 'STOP_RECORDING') {
     state.recording = false;
     state.guideId = null;
+    chrome.storage.sync.remove(['guideId', 'recording']);
     
-    // Notify all tabs
     chrome.tabs.query({}).then((tabs) => {
       tabs.forEach((tab) => {
         if (tab.id) {
@@ -95,31 +133,52 @@ chrome.runtime.onMessage.addListener((message: any, sender, sendResponse) => {
     sendResponse({ success: true });
   }
 
+  if (message.type === 'GET_STATUS') {
+    sendResponse(state);
+    return true;
+  }
+
   if (message.type === 'RECORDED_EVENT' && state.recording && state.guideId && state.apiBaseUrl && state.token) {
-    handleRecordedEvent(message.payload, state);
+    // Push to queue and process sequentially to avoid overwhelming the backend
+    eventQueue.push({ payload: message.payload, sender });
+    processQueue();
   }
 
   return true;
 });
 
-async function handleRecordedEvent(payload: RawEventPayload, currentState: ExtensionState) {
+async function handleRecordedEvent(payload: RawEventPayload, currentState: ExtensionState, sender: chrome.runtime.MessageSender) {
   try {
-    // Capture the active tab
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tab?.id) return;
+    console.log('[MargFlow] Handling event:', payload.actionType, 'on', payload.url);
 
-    const screenshotDataUrl = await chrome.tabs.captureVisibleTab({ format: 'png' });
-    
-    // Convert data URL to Blob without fetch
-    const base64Data = screenshotDataUrl.split(',')[1];
-    const byteCharacters = atob(base64Data);
-    const byteNumbers = new Array(byteCharacters.length);
-    for (let i = 0; i < byteCharacters.length; i++) {
-      byteNumbers[i] = byteCharacters.charCodeAt(i);
+    // Capture the visible tab. 
+    // In Manifest V3 Service Workers, we must be careful about which window we capture.
+    // We try to capture the window that sent the message.
+    let screenshotDataUrl: string;
+    try {
+      const windowId = sender.tab?.windowId;
+      screenshotDataUrl = await chrome.tabs.captureVisibleTab(windowId, { format: 'png' });
+    } catch (e) {
+      console.warn('[MargFlow] Failed to capture with windowId, falling back to current window:', e);
+      screenshotDataUrl = await chrome.tabs.captureVisibleTab({ format: 'png' });
     }
-    const byteArray = new Uint8Array(byteNumbers);
-    const screenshotBlob = new Blob([byteArray], { type: 'image/png' });
+    
+    if (!screenshotDataUrl) {
+      console.error('[MargFlow] Screenshot capture failed - empty data URL');
+      return;
+    }
 
+    // Convert data URL to Blob
+    const base64Data = screenshotDataUrl.split(',')[1];
+    const binStr = atob(base64Data);
+    const len = binStr.length;
+    const arr = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+      arr[i] = binStr.charCodeAt(i);
+    }
+    const screenshotBlob = new Blob([arr], { type: 'image/png' });
+
+    console.log('MargFlow: Requesting presigned URL...');
     const presignedResponse = await fetch(`${currentState.apiBaseUrl}/uploads/screenshot-presigned`, {
       method: 'POST',
       headers: {
@@ -129,23 +188,32 @@ async function handleRecordedEvent(payload: RawEventPayload, currentState: Exten
       body: JSON.stringify({
         fileName: `screenshot-${Date.now()}.png`,
         mimeType: 'image/png',
+        guideId: currentState.guideId, // Passing guideId to help backend organize
       }),
     });
 
     if (!presignedResponse.ok) {
-      console.error('Failed to get presigned URL');
+      const errText = await presignedResponse.text();
+      console.error('MargFlow: Failed to get presigned URL:', errText);
       return;
     }
 
     const { uploadUrl, key } = await presignedResponse.json();
+    console.log('MargFlow: Uploading screenshot to', uploadUrl);
 
-    await fetch(uploadUrl, {
+    const uploadResponse = await fetch(uploadUrl, {
       method: 'PUT',
       body: screenshotBlob,
       headers: {
         'Content-Type': 'image/png',
       },
     });
+
+    if (!uploadResponse.ok) {
+      const errText = await uploadResponse.text();
+      console.error('MargFlow: Failed to upload screenshot to MinIO:', errText);
+      return;
+    }
 
     // Generate a better title like Scribe
     let title = '';
@@ -158,6 +226,7 @@ async function handleRecordedEvent(payload: RawEventPayload, currentState: Exten
       title = `Navigate to ${payload.url}`;
     }
 
+    console.log('MargFlow: Creating step in backend...');
     const stepResponse = await fetch(`${currentState.apiBaseUrl}/guides/${currentState.guideId}/steps`, {
       method: 'POST',
       headers: {
@@ -177,13 +246,14 @@ async function handleRecordedEvent(payload: RawEventPayload, currentState: Exten
     });
 
     if (!stepResponse.ok) {
-      console.error('Failed to create step');
+      const errText = await stepResponse.text();
+      console.error('MargFlow: Failed to create step:', errText);
       return;
     }
 
-    console.log('Step recorded successfully');
+    console.log('MargFlow: Step recorded successfully');
   } catch (error) {
-    console.error('Error handling recorded event:', error);
+    console.error('MargFlow: Error handling recorded event:', error);
   }
 }
 

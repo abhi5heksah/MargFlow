@@ -20,7 +20,7 @@ export class UploadsController {
   ) {
     return this.uploadsService.generateScreenshotPresignedUrl(
       userId,
-      'pending',
+      dto.guideId || 'pending',
       dto.fileName,
       dto.mimeType,
     );
