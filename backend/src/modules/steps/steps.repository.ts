@@ -40,7 +40,7 @@ export class StepsRepository {
     return result._max.index ?? -1;
   }
 
-  async update(id: string, data: { title?: string; description?: string; index?: number }) {
+  async update(id: string, data: { title?: string; description?: string; index?: number; screenshotKey?: string | null }) {
     return this.prisma.step.update({
       where: { id },
       data,

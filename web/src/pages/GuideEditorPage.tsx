@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { guidesService, Guide, Step } from '../services/guidesService';
+import { guidesService, Guide } from '../services/guidesService';
 import { uploadsService } from '../services/uploadsService';
 import StepCard from '../components/guides/StepCard';
 
@@ -19,25 +19,65 @@ export default function GuideEditorPage() {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
 
-  useState(() => {
+  useEffect(() => {
     if (guide) {
       setTitle(guide.title);
       setDescription(guide.description || '');
     }
-  });
+  }, [guide]);
 
   const updateMutation = useMutation({
-    mutationFn: (data: { title?: string; description?: string; status?: string }) =>
+    mutationFn: (data: { title?: string; description?: string; status?: 'DRAFT' | 'PUBLISHED' }) =>
       guidesService.update(id!, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['guide', id] });
+      queryClient.refetchQueries({ queryKey: ['guide', id] });
     },
   });
 
   const deleteStepMutation = useMutation({
-    mutationFn: guidesService.deleteStep,
-    onSuccess: () => {
+    mutationFn: async (stepId: string) => {
+      const step = guide?.steps?.find(s => s.id === stepId);
+      if (step?.screenshotKey) {
+        await uploadsService.deleteScreenshot(step.screenshotKey).catch(() => {});
+      }
+      await guidesService.deleteStep(stepId);
+      if (guide?.steps) {
+        const remainingSteps = guide.steps
+          .filter(s => s.id !== stepId)
+          .sort((a, b) => a.index - b.index)
+          .map((s, i) => ({ id: s.id, index: i }));
+        await guidesService.reorderSteps(guide.id, remainingSteps);
+      }
+    },
+    onMutate: async (stepId: string) => {
+      // Cancel any outgoing refetches (so they don't overwrite our optimistic update)
+      await queryClient.cancelQueries({ queryKey: ['guide', id] });
+
+      // Snapshot the previous value
+      const previousGuide = queryClient.getQueryData<Guide>(['guide', id]);
+
+      // Optimistically update to the new value
+      if (previousGuide) {
+        queryClient.setQueryData<Guide>(['guide', id], {
+          ...previousGuide,
+          steps: previousGuide.steps?.filter(s => s.id !== stepId),
+        });
+      }
+
+      // Return a context object with the snapshotted value
+      return { previousGuide };
+    },
+    onError: (_err, _stepId, context) => {
+      // If the mutation fails, use the context returned from onMutate to roll back
+      if (context?.previousGuide) {
+        queryClient.setQueryData(['guide', id], context.previousGuide);
+      }
+    },
+    onSettled: () => {
+      // Always refetch after error or success to keep server in sync
       queryClient.invalidateQueries({ queryKey: ['guide', id] });
+      queryClient.refetchQueries({ queryKey: ['guide', id] });
     },
   });
 
@@ -45,7 +85,7 @@ export default function GuideEditorPage() {
   if (!guide) return <p>Guide not found</p>;
 
   return (
-    <div style={{ maxWidth: 900, margin: '0 auto' }}>
+    <div style={{ width: '100%', padding: '20 24px', margin:'20 20px', boxSizing: 'border-box' }}>
       <button
         onClick={() => navigate('/guides')}
         style={{

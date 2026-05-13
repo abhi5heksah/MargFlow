@@ -19,7 +19,7 @@ export class GuidesRepository {
   async findById(id: string) {
     return this.prisma.guide.findUnique({
       where: { id },
-      include: {
+      include: {  
         steps: {
           orderBy: { index: 'asc' },
         },

@@ -26,6 +26,11 @@ export class UploadsService {
     };
   }
 
+  async deleteScreenshot(key: string) {
+    await this.s3Service.deleteObject(key);
+    return { success: true };
+  }
+
   async getViewUrl(key: string) {
     const url = await this.s3Service.generatePresignedDownloadUrl(key, 3600);
     return { url };

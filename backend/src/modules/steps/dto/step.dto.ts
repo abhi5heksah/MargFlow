@@ -62,6 +62,11 @@ export class UpdateStepDto {
   @Min(0)
   @IsOptional()
   index?: number;
+
+  @ApiProperty({ required: false })
+  @IsString()
+  @IsOptional()
+  screenshotKey?: string | null;
 }
 
 export class ReorderStepItem {

@@ -12,4 +12,7 @@ export const uploadsService = {
 
   getViewUrl: (key: string) =>
     apiClient.get<{ url: string }>(`/uploads/view/${encodeURIComponent(key)}`),
+
+  deleteScreenshot: (key: string) =>
+    apiClient.delete<{ success: boolean }>(`/uploads/screenshot/${encodeURIComponent(key)}`),
 };

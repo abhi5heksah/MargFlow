@@ -55,6 +55,7 @@ export interface UpdateStepDto {
   title?: string;
   description?: string;
   index?: number;
+  screenshotKey?: string | null;
 }
 
 export const guidesService = {

@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Param, Body, UseGuards } from '@nestjs/common';
+import { Controller, Post, Get, Delete, Param, Body, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
 import { UploadsService } from './uploads.service';
 import { GeneratePresignedUrlDto } from './dto/upload.dto';
@@ -31,5 +31,12 @@ export class UploadsController {
   getViewUrl(@Param('key') key: string) {
     const decodedKey = decodeURIComponent(key);
     return this.uploadsService.getViewUrl(decodedKey);
+  }
+
+  @Delete('screenshot/:key(*)')
+  @ApiOperation({ summary: 'Delete a screenshot from storage' })
+  deleteScreenshot(@Param('key') key: string) {
+    const decodedKey = decodeURIComponent(key);
+    return this.uploadsService.deleteScreenshot(decodedKey);
   }
 }
