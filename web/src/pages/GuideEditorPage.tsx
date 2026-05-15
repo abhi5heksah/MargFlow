@@ -81,6 +81,14 @@ export default function GuideEditorPage() {
     },
   });
 
+  const updateStepMutation = useMutation({
+    mutationFn: (data: { id: string; title?: string; description?: string }) =>
+      guidesService.updateStep(data.id, { title: data.title, description: data.description }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['guide', id] });
+    },
+  });
+
   if (isLoading) return <p>Loading...</p>;
   if (!guide) return <p>Guide not found</p>;
 
@@ -230,6 +238,7 @@ export default function GuideEditorPage() {
             step={step}
             index={index + 1}
             onDelete={() => deleteStepMutation.mutate(step.id)}
+            onUpdate={(data) => updateStepMutation.mutate({ id: step.id, ...data })}
           />
         ))}
       </div>

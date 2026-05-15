@@ -6,9 +6,10 @@ interface StepCardProps {
   step: Step;
   index: number;
   onDelete: () => void;
+  onUpdate: (data: { title: string }) => void;
 }
 
-export default function StepCard({ step, index, onDelete }: StepCardProps) {
+export default function StepCard({ step, index, onDelete, onUpdate }: StepCardProps) {
   const [screenshotUrl, setScreenshotUrl] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [title, setTitle] = useState(step.title);
@@ -20,6 +21,17 @@ export default function StepCard({ step, index, onDelete }: StepCardProps) {
       }).catch(() => {});
     }
   }, [step.screenshotKey]);
+
+  useEffect(() => {
+    setTitle(step.title);
+  }, [step.title]);
+
+  const handleTitleSave = () => {
+    setIsEditing(false);
+    if (title !== step.title) {
+      onUpdate({ title });
+    }
+  };
 
 
 
@@ -38,7 +50,7 @@ export default function StepCard({ step, index, onDelete }: StepCardProps) {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        padding: '16px 24px',
+        padding: '8px 24px',
         borderBottom: '1px solid #f1f5f9',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
@@ -63,7 +75,12 @@ export default function StepCard({ step, index, onDelete }: StepCardProps) {
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              onBlur={() => setIsEditing(false)}
+              onBlur={handleTitleSave}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  handleTitleSave();
+                }
+              }}
               autoFocus
               style={{
                 fontSize: 18,
@@ -126,7 +143,7 @@ export default function StepCard({ step, index, onDelete }: StepCardProps) {
       </div>
 
        {/* Screenshot Container */}
-       <div style={{ padding: 20 }}>
+       <div style={{ padding: 12 }}>
          <div style={{ 
            position: 'relative',
            borderRadius: 12,
